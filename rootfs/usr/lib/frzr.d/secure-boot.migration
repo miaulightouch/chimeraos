@@ -1,0 +1,35 @@
+# Migrate to systemd-boot
+post_install() {
+	local MOUNT_PATH=$1
+
+	if cmp -s ${MOUNT_PATH}/usr/share/shim-signed/shimx64.efi ${MOUNT_PATH}/boot/EFI/BOOT/BOOTx64.EFI; then
+		# migration has already completed, exit silently
+		return 0
+	fi
+
+	echo "Migrating to secure-boot..."
+
+	if [ "$#" -lt 1 ]; then
+		echo "Migration aborted: not enough arguments"
+		return 1
+	fi
+
+	MOK_KEY="${MOUNT_PATH}/var/MOK.key"
+	MOK_CRT="${MOUNT_PATH}/var/MOK.crt"
+	MOK_CERT="${MOUNT_PATH}/boot/EFI/BOOT/MOK.cer"
+	if [ -e "${MOK_KEY}" ] && [ -e "${MOK_CERT}" ]; then
+		echo "Secure boot key not found at ${MOK_KEY}. Creating..."
+		openssl req -newkey rsa:2048 -nodes -keyout ${MOK_KEY} -new -x509 -sha256 -days 3650 -subj "/CN=my Machine Owner Key/" -out ${MOK_CRT}
+		openssl x509 -outform DER -in ${MOK_CRT} -out ${MOK_CERT}
+		echo "Secure boot key created."
+	fi
+	sbsign --key ${MOK_KEY} --cert ${MOK_CRT} --output ${MOUNT_PATH}/boot/EFI/BOOT/grubx64.EFI ${MOUNT_PATH}/boot/EFI/BOOT/BOOTx64.efi
+	# replace the sign of the kernel with the new MOK key
+	for vmlinuz in ${MOUNT_PATH}/boot/*/vmlinuz-linux; do
+		sbsign --key "${MOK_KEY}" --cert "${MOK_CRT}" --output "${vmlinuz}" "${vmlinuz}"
+	done
+	cp ${MOUNT_PATH}/usr/share/shim-signed/shimx64.efi ${MOUNT_PATH}/boot/EFI/BOOT/BOOTx64.EFI
+	cp ${MOUNT_PATH}/usr/share/shim-signed/mmx64.efi ${MOUNT_PATH}/boot/EFI/BOOT/mmx64.efi
+
+	echo "Migration to systemd-boot complete"
+}

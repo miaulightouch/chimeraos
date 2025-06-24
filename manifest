@@ -140,6 +140,7 @@ export PACKAGES="\
 	qtractor \
 	retroarch \
 	rsync \
+	sbsigntools \
 	smbclient \
 	sof-firmware \
 	sshfs \
